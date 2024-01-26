@@ -3,98 +3,106 @@ using API.Errors;
 using API.Extensions;
 using AutoMapper;
 using Domain.Entities.Identity;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
-using System.Threading.Tasks;
 
 namespace API.Controllers;
 
-public class AccountController : BaseApiController
+public class AccountController : ControllerBase
 {
-    private readonly UserManager<AppUser> _userManager;
-    private readonly SignInManager<AppUser> _signInManager;
-    private readonly IMapper _mapper;
-
-    public AccountController(UserManager<AppUser> userManager, SignInManager<AppUser> signInManager, IMapper mapper)
+    public static void AddRoutes(WebApplication app)
     {
-        _userManager = userManager;
-        _signInManager = signInManager;
-        _mapper = mapper;
-    }
-
-    [HttpGet("emailexists")]
-    public async Task<ActionResult<bool>> CheckEmailExistsAsync([FromQuery] string email)
-    {
-        return await _userManager.FindByEmailAsync(email) != null;
-    }
-
-    [HttpGet("address")]
-    public async Task<ActionResult<AddressDto>> GetUserAddress(string email)
-    {
-        var user = await _userManager.FindUserByEmailWithAddressAsync(email);
-
-        return _mapper.Map<Address, AddressDto>(user.Address);
-    }
-
-    [HttpPut("address")]
-    public async Task<ActionResult<AddressDto>> UpdateUserAddress(AddressDto address, string email)
-    {
-        var user = await _userManager.FindUserByEmailWithAddressAsync(email);
-
-        user.Address = _mapper.Map<AddressDto, Address>(address);
-
-        var result = await _userManager.UpdateAsync(user);
-
-        if (result.Succeeded) return Ok(_mapper.Map<Address, AddressDto>(user.Address));
-
-        return BadRequest("Problem updating the user");
-    }
-
-    [HttpPost("login")]
-    public async Task<ActionResult<UserDto>> Login(LoginDto loginDto)
-    {
-        var user = await _userManager.FindByEmailAsync(loginDto.Email);
-
-        if (user == null) return Unauthorized(new ApiResponse(401));
-
-        var result = await _signInManager.CheckPasswordSignInAsync(user, loginDto.Password, false);
-
-        if (!result.Succeeded) return Unauthorized(new ApiResponse(401));
-
-        return new UserDto
+        app.MapGet("/api/Account/emailexists", async (
+            [FromServices] UserManager<AppUser> _userManager,
+            string email) =>
         {
-            Email = user.Email,
-            DisplayName = user.DisplayName
-        };
-    }
+            return await _userManager.FindByEmailAsync(email) != null;
+        }).WithTags("Account");
 
-    [HttpPost("register")]
-    public async Task<ActionResult<UserDto>> Register(RegisterDto registerDto)
-    {
-        var user = new AppUser
+        app.MapGet("/api/Account/address", async (
+            [FromServices] UserManager<AppUser> _userManager,
+            [FromServices] IMapper _mapper,
+            string email) =>
         {
-            DisplayName = registerDto.DisplayName,
-            Email = registerDto.Email,
-            UserName = registerDto.Email
-        };
+            var user = await _userManager.FindUserByEmailWithAddressAsync(email);
+            if (user == null)
+                return Results.Empty;
+            return Results.Ok(_mapper.Map<Address, AddressDto>(user.Address));
+        }).WithTags("Account");
 
-        if (CheckEmailExistsAsync(registerDto.Email).Result.Value)
+        app.MapPut("/api/Account/address", async (
+            [FromServices] UserManager<AppUser> _userManager,
+            [FromServices] IMapper _mapper,
+            [FromBody] AddressDto address,
+            string email) =>
         {
-            return new BadRequestObjectResult(
-                new ApiValidationErrorResponse
-                {
-                    Errors = new[] { "Email address is in use" }
-                });
-        }
+            var user = await _userManager.FindUserByEmailWithAddressAsync(email);
 
-        var result = await _userManager.CreateAsync(user, registerDto.Password);
+            user.Address = _mapper.Map<AddressDto, Address>(address);
 
-        if (!result.Succeeded) return BadRequest(new ApiResponse(400));
+            var result = await _userManager.UpdateAsync(user);
 
-        return new UserDto
+            if (result.Succeeded) return Results.Ok(_mapper.Map<Address, AddressDto>(user.Address));
+
+            return Results.BadRequest("Problem updating the user");
+        }).WithTags("Account");
+
+        app.MapPost("/api/Account/login", async (
+            [FromServices] UserManager<AppUser> _userManager,
+            [FromServices] IMapper _mapper,
+            [FromServices] SignInManager<AppUser> _signInManager,
+            [FromBody] LoginDto loginDto) =>
         {
-            DisplayName = user.DisplayName,
-            Email = user.Email
-        };
+            var user = await _userManager.FindByEmailAsync(loginDto.Email);
+
+            if (user == null) return Results.Unauthorized();
+
+            var result = await _signInManager.CheckPasswordSignInAsync(user, loginDto.Password, false);
+
+            if (!result.Succeeded) return Results.Unauthorized(); //new ApiResponse(401)
+
+            return Results.Ok(new UserDto
+            {
+                Email = user.Email,
+                DisplayName = user.DisplayName
+            });
+        }).WithTags("Account");
+
+        app.MapPost("/api/Account/register", async (
+            [FromServices] UserManager<AppUser> _userManager,
+            [FromServices] IMapper _mapper,
+            [FromServices] SignInManager<AppUser> _signInManager,
+            [FromBody] RegisterDto registerDto) =>
+        {
+            var user = new AppUser
+            {
+                DisplayName = registerDto.DisplayName,
+                Email = registerDto.Email,
+                UserName = registerDto.Email
+            };
+
+            var emailExists = _userManager.FindByEmailAsync(registerDto.Email) != null;
+
+            if (emailExists)
+            {
+                return Results.BadRequest(
+                    new ApiValidationErrorResponse
+                    {
+                        Errors = new[] { "Email address is in use" }
+                    });
+            }
+
+            var result = await _userManager.CreateAsync(user, registerDto.Password);
+
+            if (!result.Succeeded) return Results.BadRequest(new ApiResponse(400));
+
+            return Results.Ok(new UserDto
+            {
+                DisplayName = user.DisplayName,
+                Email = user.Email
+            });
+        }).WithTags("Account");
     }
 }

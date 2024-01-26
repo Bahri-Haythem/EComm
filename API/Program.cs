@@ -1,3 +1,4 @@
+using API.Controllers;
 using API.Extensions;
 using API.Helpers;
 using API.Middleware;
@@ -26,6 +27,8 @@ builder.Services.AddControllers()
             options.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
         });
 
+builder.Services.AddEndpointsApiExplorer();
+
 builder.Services.AddDbContext<StoreContext>(x =>
     x.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 builder.Services.AddDbContext<AppIdentityDbContext>(x =>
@@ -34,11 +37,11 @@ builder.Services.AddDbContext<AppIdentityDbContext>(x =>
 builder.Services.AddAplicationServices();
 builder.Services.AddIdentityServices(builder.Configuration);
 builder.Services.AddSwaggerDocumentation();
+
 builder.Services.AddCors(setup => setup.AddPolicy("CorsPolicy", policy =>
 {
     policy.AllowAnyHeader().AllowAnyMethod().AllowAnyOrigin();
 }));
-
 
 var app = builder.Build();
 
@@ -81,14 +84,14 @@ app.UseStatusCodePagesWithReExecute("/errors/{0}");
 
 app.UseHttpsRedirection();
 
-app.UseRouting();
-
 app.UseCors("CorsPolicy");
 
 //app.UseAuthentication();
 //app.UseAuthorization();
 
-app.MapControllers();
+ProductController.AddRoutes(app);
+OrderController.AddRoutes(app);
+AccountController.AddRoutes(app);
 
 app.Run();
 
